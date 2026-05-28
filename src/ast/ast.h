@@ -21,7 +21,12 @@ enum class ExprKind
     VariableRef,
     Binary,
     Call,
-    Cast
+    Cast,
+    Unary,
+    Ternary,
+    NewExpr,
+    DeleteExpr,
+    ArraySub
 };
 
 enum class StmtKind
@@ -32,14 +37,33 @@ enum class StmtKind
     ReturnStmt,
     IfStmt,
     WhileStmt,
-    Block
+    Block,
+    Switch,
+    Break,
+    Continue,
+    CompoundAssign
 };
 
 enum class LiteralKind
 {
     Integer,
     Double,
-    Bool
+    Bool,
+    String
+};
+
+enum class UnaryOp
+{
+    Plus,
+    Minus,
+    Not,
+    BitNot,
+    PreInc,
+    PostInc,
+    PreDec,
+    PostDec,
+    Deref,
+    Addr
 };
 
 struct LiteralExpr
@@ -74,7 +98,42 @@ struct CastExpr
     ExprPtr expr;
 };
 
-using ExprPayload = std::variant<LiteralExpr, VariableRefExpr, BinaryExpr, CallExpr, CastExpr>;
+struct UnaryExpr
+{
+    UnaryOp op;
+    ExprPtr expr;
+    Type type;
+};
+
+struct TernaryExpr
+{
+    ExprPtr condition;
+    ExprPtr thenExpr;
+    ExprPtr elseExpr;
+    Type type;
+};
+
+struct NewExprData
+{
+    Type allocatedType;
+    ExprPtr arraySize; // null => scalar new
+};
+
+struct DeleteExprData
+{
+    ExprPtr expr;
+    bool isArray = false;
+};
+
+struct ArraySubExpr
+{
+    ExprPtr array;
+    ExprPtr index;
+    Type type;
+};
+
+using ExprPayload = std::variant<LiteralExpr, VariableRefExpr, BinaryExpr, CallExpr, CastExpr,
+                                 UnaryExpr, TernaryExpr, NewExprData, DeleteExprData, ArraySubExpr>;
 
 struct Expression
 {
@@ -91,7 +150,7 @@ struct VarDeclStmt
 
 struct AssignStmt
 {
-    std::string name;
+    ExprPtr lhs;
     ExprPtr expr;
 };
 
@@ -118,12 +177,40 @@ struct WhileStmt
     StmtPtr body;
 };
 
+struct SwitchCase
+{
+    std::optional<ExprPtr> value; // nullopt => default
+    std::vector<StmtPtr> body;
+};
+
+struct SwitchStmt
+{
+    ExprPtr condition;
+    std::vector<SwitchCase> cases;
+};
+
+struct BreakStmt
+{
+};
+
+struct ContinueStmt
+{
+};
+
+struct CompoundAssignStmt
+{
+    std::string op; // +=, -=, *=, /=, %=, <<=, >>=, &=, |=, ^=
+    std::string name;
+    ExprPtr expr;
+};
+
 struct BlockStmt
 {
     std::vector<StmtPtr> statements;
 };
 
-using StmtPayload = std::variant<VarDeclStmt, AssignStmt, ExprStmt, ReturnStmt, IfStmt, WhileStmt, BlockStmt>;
+using StmtPayload = std::variant<VarDeclStmt, AssignStmt, ExprStmt, ReturnStmt, IfStmt, WhileStmt,
+                                 SwitchStmt, BreakStmt, ContinueStmt, CompoundAssignStmt, BlockStmt>;
 
 struct Statement
 {
@@ -135,6 +222,7 @@ struct Function
 {
     FunctionSignature signature;
     BlockStmt body;
+    bool isTemplate = false;
 };
 
 struct Program
@@ -190,11 +278,11 @@ inline StmtPtr makeVarDecl(const Type &type, const std::string &name, std::optio
     return ptr;
 }
 
-inline StmtPtr makeAssign(const std::string &name, ExprPtr expr)
+inline StmtPtr makeAssign(ExprPtr lhs, ExprPtr expr)
 {
     auto ptr = std::make_shared<Statement>();
     ptr->kind = StmtKind::Assign;
-    ptr->data = AssignStmt{name, std::move(expr)};
+    ptr->data = AssignStmt{std::move(lhs), std::move(expr)};
     return ptr;
 }
 
@@ -227,6 +315,78 @@ inline StmtPtr makeWhile(ExprPtr condition, StmtPtr body)
     auto ptr = std::make_shared<Statement>();
     ptr->kind = StmtKind::WhileStmt;
     ptr->data = WhileStmt{std::move(condition), std::move(body)};
+    return ptr;
+}
+
+inline ExprPtr makeUnary(UnaryOp op, ExprPtr expr, const Type &type)
+{
+    auto ptr = std::make_shared<Expression>();
+    ptr->kind = ExprKind::Unary;
+    ptr->data = UnaryExpr{op, std::move(expr), type};
+    return ptr;
+}
+
+inline ExprPtr makeTernary(ExprPtr cond, ExprPtr thenExpr, ExprPtr elseExpr, const Type &type)
+{
+    auto ptr = std::make_shared<Expression>();
+    ptr->kind = ExprKind::Ternary;
+    ptr->data = TernaryExpr{std::move(cond), std::move(thenExpr), std::move(elseExpr), type};
+    return ptr;
+}
+
+inline ExprPtr makeNewExpr(const Type &allocatedType, ExprPtr arraySize = nullptr)
+{
+    auto ptr = std::make_shared<Expression>();
+    ptr->kind = ExprKind::NewExpr;
+    ptr->data = NewExprData{allocatedType, std::move(arraySize)};
+    return ptr;
+}
+
+inline ExprPtr makeDeleteExpr(ExprPtr expr, bool isArray = false)
+{
+    auto ptr = std::make_shared<Expression>();
+    ptr->kind = ExprKind::DeleteExpr;
+    ptr->data = DeleteExprData{std::move(expr), isArray};
+    return ptr;
+}
+
+inline ExprPtr makeArraySub(ExprPtr array, ExprPtr index, const Type &type)
+{
+    auto ptr = std::make_shared<Expression>();
+    ptr->kind = ExprKind::ArraySub;
+    ptr->data = ArraySubExpr{std::move(array), std::move(index), type};
+    return ptr;
+}
+
+inline StmtPtr makeSwitch(ExprPtr condition, std::vector<SwitchCase> cases)
+{
+    auto ptr = std::make_shared<Statement>();
+    ptr->kind = StmtKind::Switch;
+    ptr->data = SwitchStmt{std::move(condition), std::move(cases)};
+    return ptr;
+}
+
+inline StmtPtr makeBreak()
+{
+    auto ptr = std::make_shared<Statement>();
+    ptr->kind = StmtKind::Break;
+    ptr->data = BreakStmt{};
+    return ptr;
+}
+
+inline StmtPtr makeContinue()
+{
+    auto ptr = std::make_shared<Statement>();
+    ptr->kind = StmtKind::Continue;
+    ptr->data = ContinueStmt{};
+    return ptr;
+}
+
+inline StmtPtr makeCompoundAssign(const std::string &op, const std::string &name, ExprPtr expr)
+{
+    auto ptr = std::make_shared<Statement>();
+    ptr->kind = StmtKind::CompoundAssign;
+    ptr->data = CompoundAssignStmt{op, name, std::move(expr)};
     return ptr;
 }
 

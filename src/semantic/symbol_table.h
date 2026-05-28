@@ -65,6 +65,8 @@ public:
         return nullptr;
     }
 
+    const std::vector<FunctionSymbol> &allFunctions() const { return functions; }
+
 private:
     std::vector<Scope> scopes;
     std::vector<FunctionSymbol> functions;

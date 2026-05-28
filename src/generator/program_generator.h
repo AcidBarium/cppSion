@@ -13,22 +13,24 @@ public:
 
     Program generate();
     const GenerationStats &stats() const { return stats_; }
+    const std::vector<int> &inputValues() const { return inputValues_; }
 
 private:
     Function makeMainFunction();
     Function makeHelperFunction(int index);
-    BlockStmt makeFunctionBody(GenerationContext &ctx, int depth, std::vector<std::string> &vars);
+    BlockStmt makeFunctionBody(GenerationContext &ctx, int depth, std::vector<std::string> &vars, const std::string &fnName = "");
     StmtPtr makeVarDeclStmt(GenerationContext &ctx, std::vector<std::string> &vars, int depth);
     StmtPtr makeAssignStmt(GenerationContext &ctx, const std::vector<std::string> &vars, int depth);
     StmtPtr makeIfStmt(GenerationContext &ctx, int depth, std::vector<std::string> &vars);
     StmtPtr makeWhileStmt(GenerationContext &ctx, int depth, std::vector<std::string> &vars);
+    StmtPtr makeSwitchStmt(GenerationContext &ctx, int depth, std::vector<std::string> &vars);
+    StmtPtr makeIoStmt(GenerationContext &ctx, int depth, std::vector<std::string> &vars);
     StmtPtr makeReturnStmt(GenerationContext &ctx, const std::vector<std::string> &vars);
-    ExprPtr makeExpr(GenerationContext &ctx, int depth, const std::vector<std::string> &vars);
+    ExprPtr makeExpr(GenerationContext &ctx, int depth, const std::vector<std::string> &vars,
+                     const Type &hint = Type::makeBuiltin(Type::Builtin::Int));
     ExprPtr makeSafeBinary(GenerationContext &ctx, const std::string &op, ExprPtr a, ExprPtr b, const Type &type);
     std::string uniqueName(const std::string &prefix);
     ExprPtr makeSafeIntLiteral(int value) const;
-    ExprPtr makeSafeAdd(ExprPtr a, ExprPtr b) const;
-    ExprPtr makeBoundedRandInt(int min, int max);
 
     GenerationConfig config;
     Random &rng;
@@ -36,4 +38,6 @@ private:
     GenerationStats stats_;
     TypeRegistry types;
     int nameCounter = 0;
+    std::vector<int> inputValues_;
+    int ioReadCount_ = 0;
 };

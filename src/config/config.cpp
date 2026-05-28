@@ -11,11 +11,11 @@ namespace
         return arg == flag;
     }
 
-    std::optional<std::string> consumeValue(int &i, int argc, char **argv)
+    std::string consumeValue(int &i, int argc, char **argv, const std::string &flagName)
     {
         if (i + 1 >= argc)
         {
-            return std::nullopt;
+            throw std::runtime_error("missing value for " + flagName);
         }
         ++i;
         return std::string(argv[i]);
@@ -67,17 +67,11 @@ GenerationConfig ConfigParser::fromArgs(int argc, char **argv)
         }
         else if (hasFlag(arg, "--seed"))
         {
-            if (auto v = consumeValue(i, argc, argv))
-            {
-                cfg.seed = parseUInt64(*v);
-            }
+            cfg.seed = parseUInt64(consumeValue(i, argc, argv, arg));
         }
         else if (hasFlag(arg, "--out"))
         {
-            if (auto v = consumeValue(i, argc, argv))
-            {
-                cfg.outputPath = *v;
-            }
+            cfg.outputPath = consumeValue(i, argc, argv, arg);
         }
         else if (hasFlag(arg, "--emit-ast"))
         {
@@ -85,82 +79,67 @@ GenerationConfig ConfigParser::fromArgs(int argc, char **argv)
         }
         else if (hasFlag(arg, "--lines"))
         {
-            if (auto v = consumeValue(i, argc, argv))
-            {
-                cfg.budget.targetLines = parseInt(*v);
-            }
+            cfg.budget.targetLines = parseInt(consumeValue(i, argc, argv, arg));
         }
         else if (hasFlag(arg, "--functions"))
         {
-            if (auto v = consumeValue(i, argc, argv))
-            {
-                cfg.budget.maxFunctions = parseInt(*v);
-            }
+            cfg.budget.maxFunctions = parseInt(consumeValue(i, argc, argv, arg));
         }
         else if (hasFlag(arg, "--complexity"))
         {
-            if (auto v = consumeValue(i, argc, argv))
-            {
-                cfg.budget.maxStatements = parseInt(*v);
-            }
+            cfg.budget.maxStatements = parseInt(consumeValue(i, argc, argv, arg));
         }
         else if (hasFlag(arg, "--max-depth"))
         {
-            if (auto v = consumeValue(i, argc, argv))
-            {
-                cfg.budget.maxDepth = parseInt(*v);
-            }
+            cfg.budget.maxDepth = parseInt(consumeValue(i, argc, argv, arg));
         }
         else if (hasFlag(arg, "--max-expr"))
         {
-            if (auto v = consumeValue(i, argc, argv))
-            {
-                cfg.budget.maxExprNodes = parseInt(*v);
-            }
+            cfg.budget.maxExprNodes = parseInt(consumeValue(i, argc, argv, arg));
         }
         else if (hasFlag(arg, "--compute-weight"))
         {
-            if (auto v = consumeValue(i, argc, argv))
-            {
-                cfg.weights.compute = parseDouble(*v);
-            }
+            cfg.weights.compute = parseDouble(consumeValue(i, argc, argv, arg));
         }
         else if (hasFlag(arg, "--branch-weight"))
         {
-            if (auto v = consumeValue(i, argc, argv))
-            {
-                cfg.weights.branch = parseDouble(*v);
-            }
+            cfg.weights.branch = parseDouble(consumeValue(i, argc, argv, arg));
         }
         else if (hasFlag(arg, "--memory-weight"))
         {
-            if (auto v = consumeValue(i, argc, argv))
-            {
-                cfg.weights.memory = parseDouble(*v);
-            }
+            cfg.weights.memory = parseDouble(consumeValue(i, argc, argv, arg));
         }
         else if (hasFlag(arg, "--io-weight"))
         {
-            if (auto v = consumeValue(i, argc, argv))
-            {
-                cfg.weights.io = parseDouble(*v);
-            }
+            cfg.weights.io = parseDouble(consumeValue(i, argc, argv, arg));
         }
         else if (hasFlag(arg, "--recursion-weight"))
         {
-            if (auto v = consumeValue(i, argc, argv))
-            {
-                cfg.weights.recursion = parseDouble(*v);
-            }
+            cfg.weights.recursion = parseDouble(consumeValue(i, argc, argv, arg));
         }
         else if (hasFlag(arg, "--template-weight"))
         {
-            if (auto v = consumeValue(i, argc, argv))
-            {
-                cfg.weights.templ = parseDouble(*v);
-            }
+            cfg.weights.templ = parseDouble(consumeValue(i, argc, argv, arg));
+        }
+        else
+        {
+            throw std::runtime_error("unknown flag: " + arg);
         }
     }
+
+    auto checkWeight = [](double w, const std::string &name)
+    {
+        if (w < 0.0 || w > 1.0)
+        {
+            throw std::runtime_error(name + " must be in [0, 1], got " + std::to_string(w));
+        }
+    };
+    checkWeight(cfg.weights.compute, "--compute-weight");
+    checkWeight(cfg.weights.branch, "--branch-weight");
+    checkWeight(cfg.weights.memory, "--memory-weight");
+    checkWeight(cfg.weights.io, "--io-weight");
+    checkWeight(cfg.weights.recursion, "--recursion-weight");
+    checkWeight(cfg.weights.templ, "--template-weight");
 
     return cfg;
 }

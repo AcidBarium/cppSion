@@ -39,6 +39,10 @@ void AstPrinter::indent(std::ostream &os, int indent) const
 
 std::string AstPrinter::literalToString(const LiteralExpr &lit) const
 {
+    if (lit.kind == LiteralKind::String)
+    {
+        return "\"" + escapeString(lit.value) + "\"";
+    }
     return lit.value;
 }
 
@@ -108,6 +112,69 @@ void AstPrinter::printExpression(const Expression &expr, std::ostream &os) const
                 printExpression(*node.expr, os);
                 os << " )";
             }
+            else if constexpr (std::is_same_v<T, UnaryExpr>)
+            {
+                os << '(';
+                switch (node.op)
+                {
+                case UnaryOp::Plus:   os << '+'; break;
+                case UnaryOp::Minus:  os << '-'; break;
+                case UnaryOp::Not:    os << '!'; break;
+                case UnaryOp::BitNot: os << '~'; break;
+                case UnaryOp::PreInc: os << "++"; break;
+                case UnaryOp::PostInc: break;
+                case UnaryOp::PreDec: os << "--"; break;
+                case UnaryOp::PostDec: break;
+                case UnaryOp::Deref:  os << '*'; break;
+                case UnaryOp::Addr:   os << '&'; break;
+                }
+                if (node.op == UnaryOp::PostInc || node.op == UnaryOp::PostDec)
+                {
+                    printExpression(*node.expr, os);
+                    os << (node.op == UnaryOp::PostInc ? "++" : "--");
+                }
+                else
+                {
+                    printExpression(*node.expr, os);
+                }
+                os << ')';
+            }
+            else if constexpr (std::is_same_v<T, TernaryExpr>)
+            {
+                os << '(';
+                printExpression(*node.condition, os);
+                os << " ? ";
+                printExpression(*node.thenExpr, os);
+                os << " : ";
+                printExpression(*node.elseExpr, os);
+                os << ')';
+            }
+            else if constexpr (std::is_same_v<T, NewExprData>)
+            {
+                os << "new ";
+                if (node.arraySize)
+                {
+                    os << typeToString(node.allocatedType) << '[';
+                    printExpression(*node.arraySize, os);
+                    os << ']';
+                }
+                else
+                {
+                    os << typeToString(node.allocatedType);
+                }
+            }
+            else if constexpr (std::is_same_v<T, DeleteExprData>)
+            {
+                os << (node.isArray ? "delete[] " : "delete ");
+                printExpression(*node.expr, os);
+            }
+            else if constexpr (std::is_same_v<T, ArraySubExpr>)
+            {
+                printExpression(*node.array, os);
+                os << '[';
+                printExpression(*node.index, os);
+                os << ']';
+            }
         },
         expr.data);
 }
@@ -121,7 +188,19 @@ void AstPrinter::printStatement(const Statement &stmt, std::ostream &os, int ind
             using T = std::decay_t<decltype(node)>;
             if constexpr (std::is_same_v<T, VarDeclStmt>)
             {
-                os << typeToString(node.type) << ' ' << node.name;
+                // Array types: "int name[5]" not "int[5] name"
+                if (node.type.kind == Type::Kind::Array)
+                {
+                    os << typeToString(*node.type.element) << ' ' << node.name << '[' << node.type.arraySize << ']';
+                }
+                else if (node.type.kind == Type::Kind::Pointer)
+                {
+                    os << typeToString(*node.type.element) << " * " << node.name;
+                }
+                else
+                {
+                    os << typeToString(node.type) << ' ' << node.name;
+                }
                 if (node.init)
                 {
                     os << " = ";
@@ -131,7 +210,8 @@ void AstPrinter::printStatement(const Statement &stmt, std::ostream &os, int ind
             }
             else if constexpr (std::is_same_v<T, AssignStmt>)
             {
-                os << node.name << " = ";
+                printExpression(*node.lhs, os);
+                os << " = ";
                 printExpression(*node.expr, os);
                 os << ";\n";
             }
@@ -182,6 +262,49 @@ void AstPrinter::printStatement(const Statement &stmt, std::ostream &os, int ind
                 indent(os, indentLevel);
                 os << "}\n";
             }
+            else if constexpr (std::is_same_v<T, SwitchStmt>)
+            {
+                os << "switch (";
+                printExpression(*node.condition, os);
+                os << ")\n";
+                indent(os, indentLevel);
+                os << "{\n";
+                for (const auto &c : node.cases)
+                {
+                    if (c.value)
+                    {
+                        indent(os, indentLevel + 4);
+                        os << "case ";
+                        printExpression(**c.value, os);
+                        os << ":\n";
+                    }
+                    else
+                    {
+                        indent(os, indentLevel + 4);
+                        os << "default:\n";
+                    }
+                    for (const auto &s : c.body)
+                    {
+                        printStatement(*s, os, indentLevel + 8);
+                    }
+                }
+                indent(os, indentLevel);
+                os << "}\n";
+            }
+            else if constexpr (std::is_same_v<T, BreakStmt>)
+            {
+                os << "break;\n";
+            }
+            else if constexpr (std::is_same_v<T, ContinueStmt>)
+            {
+                os << "continue;\n";
+            }
+            else if constexpr (std::is_same_v<T, CompoundAssignStmt>)
+            {
+                os << node.name << ' ' << node.op << ' ';
+                printExpression(*node.expr, os);
+                os << ";\n";
+            }
             else if constexpr (std::is_same_v<T, BlockStmt>)
             {
                 for (const auto &s : node.statements)
@@ -195,15 +318,36 @@ void AstPrinter::printStatement(const Statement &stmt, std::ostream &os, int ind
 
 void AstPrinter::printFunction(const Function &fn, std::ostream &os, int indentLevel) const
 {
+    if (fn.isTemplate)
+    {
+        indent(os, indentLevel);
+        os << "template<typename T>\n";
+    }
     indent(os, indentLevel);
-    os << typeToString(fn.signature.returnType) << ' ' << fn.signature.name << '(';
+    if (fn.isTemplate)
+    {
+        os << 'T';
+    }
+    else
+    {
+        os << typeToString(fn.signature.returnType);
+    }
+    os << ' ' << fn.signature.name << '(';
     for (std::size_t i = 0; i < fn.signature.parameters.size(); ++i)
     {
         if (i > 0)
         {
             os << ", ";
         }
-        os << typeToString(fn.signature.parameters[i]) << " p" << i;
+        if (fn.isTemplate)
+        {
+            os << 'T';
+        }
+        else
+        {
+            os << typeToString(fn.signature.parameters[i]);
+        }
+        os << " p" << i;
     }
     os << ")\n";
     indent(os, indentLevel);
@@ -219,7 +363,9 @@ void AstPrinter::printFunction(const Function &fn, std::ostream &os, int indentL
 void AstPrinter::printProgram(const Program &program, std::ostream &os) const
 {
     os << "#include <iostream>\n";
+    os << "#include <fstream>\n";
     os << "#include <cstdint>\n\n";
+    os << "std::ifstream fin(\"input.txt\");\n\n";
 
     for (const auto &fn : program.functions)
     {

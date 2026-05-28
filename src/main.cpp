@@ -51,6 +51,22 @@ int main(int argc, char **argv)
             printer.printAstJson(program, *jsonOut);
         }
 
+        // Write input file for IO operations
+        if (!generator.inputValues().empty())
+        {
+            std::string inputPath = "input.txt";
+            if (!cfg.outputPath.empty())
+            {
+                auto pos = cfg.outputPath.rfind('.');
+                inputPath = (pos != std::string::npos) ? cfg.outputPath.substr(0, pos) + "_input.txt" : cfg.outputPath + "_input.txt";
+            }
+            std::ofstream inputFile(inputPath);
+            for (int v : generator.inputValues())
+            {
+                inputFile << v << "\n";
+            }
+        }
+
         const auto &stats = generator.stats();
         std::cerr << "cppSion stats\n"
                   << "seed: " << seed << "\n"

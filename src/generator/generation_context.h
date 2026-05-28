@@ -21,7 +21,9 @@ class GenerationContext
 {
 public:
     GenerationContext(const GenerationConfig &cfg, SymbolTable &symbols, GenerationStats &stats)
-        : config(cfg), table(symbols), stats(stats)
+        : config(cfg), table(symbols), stats(stats),
+          remainingStatements(cfg.budget.maxStatements),
+          remainingExpr(cfg.budget.maxExprNodes)
     {
     }
 
@@ -85,6 +87,6 @@ public:
     GenerationStats &stats;
 
 private:
-    int remainingStatements = config.budget.maxStatements;
-    int remainingExpr = config.budget.maxExprNodes;
+    int remainingStatements;
+    int remainingExpr;
 };
